@@ -6,13 +6,11 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.NavigationView;
-import android.support.design.widget.Snackbar;
 import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -20,11 +18,23 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
+import com.masrepus.timesheet.database.References;
+import com.masrepus.timesheet.database.Timerecord;
+import com.masrepus.timesheet.database.Timesheet;
+import com.masrepus.timesheet.database.User;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
+import java.util.Arrays;
+
 import javax.net.ssl.HttpsURLConnection;
 
 public class MainActivity extends AppCompatActivity
@@ -33,6 +43,13 @@ public class MainActivity extends AppCompatActivity
     private static final String TAG = "MainActivity";
     private FirebaseAuth auth;
     private NavigationView navigationView;
+    private DatabaseReference timesheets;
+    private DataSnapshot timesheetSnapshot;
+    private DatabaseReference users;
+    private DataSnapshot userSnapshot;
+    private DatabaseReference timerecords;
+    private DataSnapshot timerecordSnapshot;
+    private String uid;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,13 +59,7 @@ public class MainActivity extends AppCompatActivity
         setSupportActionBar(toolbar);
 
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
-        fab.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show();
-            }
-        });
+        fab.setOnClickListener(v -> addTimeRecord());
 
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
@@ -63,11 +74,81 @@ public class MainActivity extends AppCompatActivity
         auth = FirebaseAuth.getInstance();
         if (auth.getCurrentUser() != null) {
             initUserData();
+            setUpDatabase();
         }
+    }
+
+    private void setUpDatabase() {
+        timesheets = FirebaseDatabase.getInstance().getReference(References.TIMESHEETS);
+        users = FirebaseDatabase.getInstance().getReference(References.USERS);
+        timerecords = FirebaseDatabase.getInstance().getReference(References.TIMERECORDS);
+
+        timesheets.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                timesheetSnapshot = dataSnapshot;
+            }
+
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+
+            }
+        });
+
+        //check if this user already has a timesheet, else create a new one
+        users.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                userSnapshot = dataSnapshot;
+                if (!dataSnapshot.hasChild(uid)) {
+                    createEmptyTimesheet();
+                }
+            }
+
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+
+            }
+        });
+
+        timerecords.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                timerecordSnapshot = dataSnapshot;
+            }
+
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+
+            }
+        });
+    }
+
+    private String createEmptyTimesheet() {
+        String timesheetId = timesheets.push().getKey();
+        Timesheet timesheet = new Timesheet(auth.getCurrentUser().getDisplayName(), Arrays.asList(uid));
+        timesheets.child(timesheetId).setValue(timesheet);
+        User user = new User(Arrays.asList(timesheetId));
+        users.child(uid).setValue(user);
+        return timesheetId;
+    }
+
+    private void addTimeRecord() {
+        Timerecord timerecord = new Timerecord(System.currentTimeMillis(), System.currentTimeMillis() + 18000000, 15);
+        String sheetId;
+        if (!userSnapshot.hasChild(uid)) {
+            sheetId = createEmptyTimesheet();
+        }
+        else {
+            User user = userSnapshot.child(uid).getValue(User.class);
+            sheetId = user.getTimesheets().get(0);
+        }
+        timerecords.child(sheetId).push().setValue(timerecord);
     }
 
     private void initUserData() {
         FirebaseUser user = auth.getCurrentUser();
+        uid = user.getUid();
 
         new ImageLoader().execute(user.getPhotoUrl().toString());
 
@@ -171,9 +252,7 @@ public class MainActivity extends AppCompatActivity
                 if (httpConn.getResponseCode() == HttpURLConnection.HTTP_OK) {
                     inputStream = httpConn.getInputStream();
                 }
-            } catch (Exception ex) {
-                ex.toString();
-            }
+            } catch (Exception ex) {}
             return inputStream;
         }
 
