@@ -7,4 +7,6 @@
 
   <string name="navigation_drawer_open">Open navigation drawer</string>
   <string name="navigation_drawer_close">Close navigation drawer</string>
+    <string name="timerecord_start_end">%s - %s</string>
+  <string name="timerecord_salary">%.2f€ (%.2f/h)</string>
 </resources>

@@ -10,6 +10,8 @@ import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -34,6 +36,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 
 import javax.net.ssl.HttpsURLConnection;
 
@@ -44,22 +48,41 @@ public class MainActivity extends AppCompatActivity
     private FirebaseAuth auth;
     private NavigationView navigationView;
     private DatabaseReference timesheets;
-    private DataSnapshot timesheetSnapshot;
     private DatabaseReference users;
     private DataSnapshot userSnapshot;
     private DatabaseReference timerecords;
-    private DataSnapshot timerecordSnapshot;
+    private List<Timerecord> currentTimesheet = new LinkedList<>();
     private String uid;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
 
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
-        fab.setOnClickListener(v -> addTimeRecord());
+        fab.setOnClickListener(v -> addTimeRecord(new Timerecord(System.currentTimeMillis(), System.currentTimeMillis() + 10800000, 10, "Test")));
+
+        initDrawer();
+        initRecycler();
+
+        auth = FirebaseAuth.getInstance();
+        if (auth.getCurrentUser() != null) {
+            initUserData();
+            setUpDatabase();
+        }
+    }
+
+    private void initRecycler() {
+        RecyclerView recyclerView = (RecyclerView) findViewById(R.id.timesheet_recyclerview);
+        recyclerView.setHasFixedSize(true);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
+        TimesheetAdapter adapter = new TimesheetAdapter(this, currentTimesheet);
+        recyclerView.setAdapter(adapter);
+    }
+
+    private void initDrawer() {
+        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
 
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
@@ -70,30 +93,12 @@ public class MainActivity extends AppCompatActivity
 
         navigationView = (NavigationView) findViewById(R.id.nav_view);
         navigationView.setNavigationItemSelectedListener(this);
-
-        auth = FirebaseAuth.getInstance();
-        if (auth.getCurrentUser() != null) {
-            initUserData();
-            setUpDatabase();
-        }
     }
 
     private void setUpDatabase() {
         timesheets = FirebaseDatabase.getInstance().getReference(References.TIMESHEETS);
         users = FirebaseDatabase.getInstance().getReference(References.USERS);
         timerecords = FirebaseDatabase.getInstance().getReference(References.TIMERECORDS);
-
-        timesheets.addValueEventListener(new ValueEventListener() {
-            @Override
-            public void onDataChange(DataSnapshot dataSnapshot) {
-                timesheetSnapshot = dataSnapshot;
-            }
-
-            @Override
-            public void onCancelled(DatabaseError databaseError) {
-
-            }
-        });
 
         //check if this user already has a timesheet, else create a new one
         users.addValueEventListener(new ValueEventListener() {
@@ -103,6 +108,8 @@ public class MainActivity extends AppCompatActivity
                 if (!dataSnapshot.hasChild(uid)) {
                     createEmptyTimesheet();
                 }
+
+                setupTimesheetListener();
             }
 
             @Override
@@ -110,11 +117,19 @@ public class MainActivity extends AppCompatActivity
 
             }
         });
+    }
 
-        timerecords.addValueEventListener(new ValueEventListener() {
+    private void setupTimesheetListener() {
+        //get the user's timerecords so that we can process them
+        String sheetId = getCurrentTimesheetId();
+        timerecords.child(sheetId).addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
-                timerecordSnapshot = dataSnapshot;
+                currentTimesheet = new LinkedList<>();
+                for (DataSnapshot timerecord : dataSnapshot.getChildren()) {
+                    currentTimesheet.add(timerecord.getValue(Timerecord.class));
+                }
+                initRecycler();
             }
 
             @Override
@@ -133,8 +148,12 @@ public class MainActivity extends AppCompatActivity
         return timesheetId;
     }
 
-    private void addTimeRecord() {
-        Timerecord timerecord = new Timerecord(System.currentTimeMillis(), System.currentTimeMillis() + 18000000, 15);
+    private void addTimeRecord(Timerecord timerecord) {
+        String sheetId = getCurrentTimesheetId();
+        timerecords.child(sheetId).push().setValue(timerecord);
+    }
+
+    private String getCurrentTimesheetId() {
         String sheetId;
         if (!userSnapshot.hasChild(uid)) {
             sheetId = createEmptyTimesheet();
@@ -143,7 +162,7 @@ public class MainActivity extends AppCompatActivity
             User user = userSnapshot.child(uid).getValue(User.class);
             sheetId = user.getTimesheets().get(0);
         }
-        timerecords.child(sheetId).push().setValue(timerecord);
+        return sheetId;
     }
 
     private void initUserData() {
