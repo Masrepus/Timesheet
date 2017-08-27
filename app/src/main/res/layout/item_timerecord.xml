@@ -28,6 +28,7 @@
         android:layout_marginTop="8dp"
         android:text="start - end"
         android:textAppearance="@android:style/TextAppearance.DeviceDefault.Medium"
+        android:textStyle="bold"
         app:layout_constraintBottom_toTopOf="@+id/tv_comment"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
